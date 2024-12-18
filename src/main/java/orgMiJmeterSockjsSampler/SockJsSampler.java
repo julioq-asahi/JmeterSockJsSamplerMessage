@@ -183,6 +183,14 @@ public class SockJsSampler extends AbstractJavaSamplerClient implements Serializ
 
 		// Allow some time before stopping the client
 		Thread.sleep(context.getLongParameter(CONNECTION_TIME) + context.getLongParameter(RESPONSE_BUFFER_TIME));
+		
+
+		// Explicitly disconnect the session and stop the client
+		if (session != null && session.isConnected()) {
+			session.disconnect();
+			responseMessage.addMessage("WebSocket session has been disconnected.");
+		}
+	
 		stompClient.stop();
 
 		responseMessage.addMessage("WebSocket connection has been closed.");
