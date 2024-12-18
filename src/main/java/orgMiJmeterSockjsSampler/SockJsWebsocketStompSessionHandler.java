@@ -12,6 +12,7 @@ public class SockJsWebsocketStompSessionHandler extends StompSessionHandlerAdapt
 	private long responseBufferTime;
 	private String messageStorage = "";
 	private ResponseMessage responseMessage;
+	private boolean isConnected = false;
 		
 	public SockJsWebsocketStompSessionHandler(String subscribeHeaders, long connectionTime, long responseBufferTime, ResponseMessage responseMessage) {
 		this.subscribeHeaders = subscribeHeaders;
@@ -26,13 +27,13 @@ public class SockJsWebsocketStompSessionHandler extends StompSessionHandlerAdapt
 	
 	@Override
 	public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
+		this.isConnected = true;
 		String connectionMessage = "Session id: " + session.getSessionId()
 								 + "\n - Waiting for the server connection for " + this.connectionTime + " MILLISECONDS"
 								 + "\n - WebSocket connection has been opened"
 								 + "\n - Connection established";
 
 		this.responseMessage.addMessage(connectionMessage);	
-		
 	    this.subscribeTo(session);
 	}
 	
@@ -83,4 +84,24 @@ public class SockJsWebsocketStompSessionHandler extends StompSessionHandlerAdapt
 	    
 	    session.subscribe(headers, new SockJsWebsocketSubscriptionHandler(this.responseMessage, this.responseBufferTime));
 	}
+
+    public void sendMessage(StompSession session, String destination, String message) {
+        if (session != null && destination != null && message != null) {
+            synchronized (session) {
+                try {
+                    StompHeaders stompHeaders = new StompHeaders();
+                    stompHeaders.setDestination(destination);
+                    session.send(stompHeaders, message.getBytes());
+                } catch (Exception e) {
+                    responseMessage.addProblem("Error on sending message: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    // Notify the wait method in sendMessage when the connection is ready
+    public synchronized void notifyConnection() {
+        isConnected = true;
+        notifyAll();
+    }
 }

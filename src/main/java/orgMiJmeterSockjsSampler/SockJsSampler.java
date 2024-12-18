@@ -31,6 +31,7 @@ import org.springframework.web.socket.sockjs.client.Transport;
 import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 import org.springframework.web.socket.sockjs.frame.Jackson2SockJsMessageCodec;
 import org.springframework.web.socket.sockjs.transport.TransportType;
+import org.springframework.messaging.simp.stomp.StompSession;
  
 public class SockJsSampler extends AbstractJavaSamplerClient implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -51,7 +52,8 @@ public class SockJsSampler extends AbstractJavaSamplerClient implements Serializ
 	public static final String CONNECTION_HEADERS_HEARTBEAT = "connectionHeadersHeartbeat";
 	public static final String SUBSCRIBE_HEADERS_ID = "subscribeHeadersId";
 	public static final String SUBSCRIBE_HEADERS_DESTINATION = "subscribeHeadersDestination";
-	
+	public static final String MESSAGE_DESTINATION = "messageDestination";
+	public static final String MESSAGE_BODY = "messageBody";
 	
 	@Override
     public void setupTest(JavaSamplerContext context){
@@ -61,25 +63,25 @@ public class SockJsSampler extends AbstractJavaSamplerClient implements Serializ
 	
 	// set up default arguments for the JMeter GUI
     @Override
-    // @TODO: remove Passwords and so on 
-    public Arguments getDefaultParameters() {
-        Arguments defaultParameters = new Arguments();
-        defaultParameters.addArgument(TRANSPORT, XHR_STREAMING_TRANSPORT, "", "Choose a transport-type: 'websocket' or 'xhr-streaming'");
-        defaultParameters.addArgument(HOST, "https://[xxx].[xxx]");
-        defaultParameters.addArgument(PATH, "/[xxx]/");
-        defaultParameters.addArgument(CONNECTION_TIME, "[30000]");
-        defaultParameters.addArgument(RESPONSE_BUFFER_TIME, "[30000]");
-        defaultParameters.addArgument(CONNECTION_HEADERS_LOGIN, "login:[xxx]");
-        defaultParameters.addArgument(CONNECTION_HEADERS_PASSCODE, "passcode:[xxx]");
-        defaultParameters.addArgument(CONNECTION_HEADERS_HOST, "host:[xxx]");
-        defaultParameters.addArgument(CONNECTION_HEADERS_ACCEPT_VERSION, "accept-version:1.1,1.0");
-        defaultParameters.addArgument(CONNECTION_HEADERS_HEARTBEAT, "heart-beat:0,0");
-        defaultParameters.addArgument(SUBSCRIBE_HEADERS_ID, "id:sub-[x]");
-        defaultParameters.addArgument(SUBSCRIBE_HEADERS_DESTINATION, "destination:/exchange/[exchange_name]/[queue_name]");
-        
-        return defaultParameters;
-    }
- 
+	public Arguments getDefaultParameters() {
+		Arguments defaultParameters = new Arguments();
+		defaultParameters.addArgument(TRANSPORT, XHR_STREAMING_TRANSPORT, "", "Choose a transport-type: 'websocket' or 'xhr-streaming'");
+		defaultParameters.addArgument(HOST, "https://[xxx].[xxx]");
+		defaultParameters.addArgument(PATH, "/[xxx]/");
+		defaultParameters.addArgument(CONNECTION_TIME, "[30000]");
+		defaultParameters.addArgument(RESPONSE_BUFFER_TIME, "[30000]");
+		defaultParameters.addArgument(CONNECTION_HEADERS_LOGIN, "login:[xxx]");
+		defaultParameters.addArgument(CONNECTION_HEADERS_PASSCODE, "passcode:[xxx]");
+		defaultParameters.addArgument(CONNECTION_HEADERS_HOST, "host:[xxx]");
+		defaultParameters.addArgument(CONNECTION_HEADERS_ACCEPT_VERSION, "accept-version:1.1,1.0");
+		defaultParameters.addArgument(CONNECTION_HEADERS_HEARTBEAT, "heart-beat:0,0");
+		defaultParameters.addArgument(SUBSCRIBE_HEADERS_ID, "id:sub-[x]");
+		defaultParameters.addArgument(SUBSCRIBE_HEADERS_DESTINATION, "destination:/exchange/[exchange_name]/[queue_name]");
+		defaultParameters.addArgument(MESSAGE_DESTINATION, "/app/chat/1", "", "The destination for sending messages.");
+		defaultParameters.addArgument(MESSAGE_BODY, "Hello, World!", "", "The body content of the message to send.");
+		return defaultParameters;
+	}
+	
     @Override
     public SampleResult runTest(JavaSamplerContext context) {
 		SampleResult sampleResult = new SampleResult();
@@ -130,67 +132,94 @@ public class SockJsSampler extends AbstractJavaSamplerClient implements Serializ
     }
     
     // Websocket test
- 	public void createWebsocketConnection(JavaSamplerContext context, ResponseMessage responseMessage) throws Exception {
- 		StandardWebSocketClient simpleWebSocketClient = new StandardWebSocketClient();
-		// set up a TrustManager that trusts everything
+	public void createWebsocketConnection(JavaSamplerContext context, ResponseMessage responseMessage) throws Exception {
+		// Set up WebSocket client
+		StandardWebSocketClient simpleWebSocketClient = new StandardWebSocketClient();
 		SSLContext sslContext = SSLContext.getInstance("TLS");
-		sslContext.init(null, new TrustManager[] { new BlindTrustManager() }, null);
+		sslContext.init(null, new TrustManager[]{ new BlindTrustManager() }, null);
 		Map<String, Object> userProperties = new HashMap<>();
 		userProperties.put(Constants.SSL_CONTEXT_PROPERTY, sslContext);
 		simpleWebSocketClient.setUserProperties(userProperties);
-			
+
 		List<Transport> transports = new ArrayList<>(1);
-     	transports.add(new WebSocketTransport(simpleWebSocketClient));
- 				
- 		SockJsClient sockJsClient = new SockJsClient(transports);
- 		WebSocketStompClient stompClient = new WebSocketStompClient(sockJsClient);
- 		stompClient.setMessageConverter(new StringMessageConverter());
- 		
- 		URI stompUrlEndpoint = new URI(context.getParameter(HOST) + context.getParameter(PATH));
- 		StompSessionHandler sessionHandler = new SockJsWebsocketStompSessionHandler(
-			this.getSubscribeHeaders(context), 
-			context.getLongParameter(CONNECTION_TIME), 
+		transports.add(new WebSocketTransport(simpleWebSocketClient));
+
+		SockJsClient sockJsClient = new SockJsClient(transports);
+		WebSocketStompClient stompClient = new WebSocketStompClient(sockJsClient);
+		stompClient.setMessageConverter(new StringMessageConverter());
+
+		// Extract parameters
+		URI stompUrlEndpoint = new URI(context.getParameter(HOST) + context.getParameter(PATH));
+		String messageDestination = context.getParameter(SockJsSampler.MESSAGE_DESTINATION);
+		String messageBody = context.getParameter(SockJsSampler.MESSAGE_BODY);
+
+		SockJsWebsocketStompSessionHandler sessionHandler = new SockJsWebsocketStompSessionHandler(
+			context.getParameter(SUBSCRIBE_HEADERS_DESTINATION),
+			context.getLongParameter(CONNECTION_TIME),
 			context.getLongParameter(RESPONSE_BUFFER_TIME),
 			responseMessage
 		);
- 		 		
- 		WebSocketHttpHeaders handshakeHeaders = new WebSocketHttpHeaders();
- 		StompHeaders connectHeaders = new StompHeaders();
- 		String connectionHeadersString = this.getConnectionsHeaders(context);
- 		String[] splitHeaders = connectionHeadersString.split("\n");
 
- 		for (int i = 0; i < splitHeaders.length; i++) {
- 			int key = 0;
- 			int value = 1;
- 			String[] headerParameter = splitHeaders[i].split(":");
- 			
- 			connectHeaders.add(headerParameter[key], headerParameter[value]);			
- 		}
- 		
- 		String startMessage = "\n[Execution Flow]"
- 						    + "\n - Opening new connection"
- 							+ "\n - Using response message pattern \"a[\"CONNECTED\""
- 							+ "\n - Using response message pattern \"a[\"MESSAGE\\nsubscription:sub-0\""
- 							+ "\n - Using disconnect pattern \"\"";
+		WebSocketHttpHeaders handshakeHeaders = new WebSocketHttpHeaders();
+		StompHeaders connectHeaders = new StompHeaders();
+		String connectionHeadersString = context.getParameter(CONNECTION_HEADERS_LOGIN) + "\n" +
+										context.getParameter(CONNECTION_HEADERS_PASSCODE) + "\n" +
+										context.getParameter(CONNECTION_HEADERS_HOST) + "\n" +
+										context.getParameter(CONNECTION_HEADERS_ACCEPT_VERSION) + "\n" +
+										context.getParameter(CONNECTION_HEADERS_HEARTBEAT);
 
- 		responseMessage.addMessage(startMessage);
- 		
- 		stompClient.connect(stompUrlEndpoint.toString(), handshakeHeaders, connectHeaders, sessionHandler, new Object[0]);
- 		 	
- 		// wait some time till killing the stomp connection
- 		Thread.sleep(context.getLongParameter(CONNECTION_TIME) + context.getLongParameter(RESPONSE_BUFFER_TIME));
- 		stompClient.stop();
- 		
- 		String messageVariables = "\n[Variables]"
- 								+ "\n" + " - Message count: " + responseMessage.getMessageCounter();
- 		
- 		responseMessage.addMessage(messageVariables);
- 	
- 		String messageProblems = "\n[Problems]"
-								+ "\n" + responseMessage.getProblems();
- 		
- 		responseMessage.addMessage(messageProblems);
- 	}
+		String[] splitHeaders = connectionHeadersString.split("\n");
+		for (String header : splitHeaders) {
+			String[] headerParameter = header.split(":");
+			connectHeaders.add(headerParameter[0], headerParameter[1]);
+		}
+
+		// Log the start of connection setup
+    	responseMessage.addMessage("Attempting to connect to WebSocket...");
+
+		// Establish connection
+		StompSession session = stompClient.connect(stompUrlEndpoint.toString(), handshakeHeaders, connectHeaders, sessionHandler).get();
+
+		// Retry sending message if any parameter is null
+		long timeout = context.getLongParameter(CONNECTION_TIME);
+		long startTime = System.currentTimeMillis();
+		boolean messageSent = false;
+
+		while ((System.currentTimeMillis() - startTime) < timeout && !messageSent) {
+			if (session != null && messageDestination != null && messageBody != null) {
+				try {
+					sessionHandler.sendMessage(session, messageDestination, messageBody);
+					messageSent = true;
+					responseMessage.addMessage("Message sent successfully: " + messageBody);
+				} catch (Exception e) {
+					responseMessage.addProblem("Error sending message: " + e.getMessage());
+				}
+			} else {
+				responseMessage.addProblem("Retrying to send message due to null parameter(s)...");
+			}
+
+			// Short delay to prevent busy waiting
+			if (!messageSent) {
+				try {
+					Thread.sleep(100); // 100ms delay between retries
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					responseMessage.addProblem("Interrupted during retry sleep: " + e.getMessage());
+				}
+			}
+		}
+
+		if (!messageSent) {
+			responseMessage.addProblem("Failed to send message after retries within time limit.");
+		}
+
+
+		// Allow some time before stopping the client
+		Thread.sleep(context.getLongParameter(CONNECTION_TIME) + context.getLongParameter(RESPONSE_BUFFER_TIME));
+		stompClient.stop();
+
+		responseMessage.addMessage("WebSocket connection has been closed.");
+	}
  	
     // XHR-Streaming test
     public void createXhrStreamingConnection(JavaSamplerContext context, ResponseMessage responseMessage) throws Exception {
