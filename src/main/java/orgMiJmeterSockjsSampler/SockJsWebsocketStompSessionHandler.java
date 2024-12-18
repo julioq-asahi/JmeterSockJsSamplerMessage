@@ -92,22 +92,30 @@ public class SockJsWebsocketStompSessionHandler extends StompSessionHandlerAdapt
 		boolean messageSent = false;
 		int maxRetries = 10;
 		int retries = 0;
-		int sleepTime = 20;
+		int sleepTime = 20; // in milliseconds
 	
 		while (!messageSent && retries < maxRetries) {
 			try {
 				session.send(stompHeaders, message.getBytes());
-				messageSent = true; // If send successful, exit loop
+				messageSent = true; // Mark as successful if no exception is thrown
+				responseMessage.addMessage("Message sent successfully to destination: " + destination);
 			} catch (Exception e) {
 				retries++;
 				if (retries < maxRetries) {
 					msleep(sleepTime);
+					responseMessage.addMessage("Retrying send to destination: " + destination + " (Attempt " + (retries + 1) + ")");
 				} else {
-					// Log the failure after retrying max times
-					System.out.println("Failed to send message after " + retries + " retries.");
-					e.printStackTrace();
+					// Log the failure after exhausting retries
+					responseMessage.addMessage("Failed to send message after " + retries + " retries to destination: " + destination);
+					responseMessage.addProblem("Exception: " + e.getMessage());
 				}
 			}
+		}
+	
+		if (messageSent) {
+			responseMessage.addMessage("Message successfully sent after " + retries + " retries.");
+		} else {
+			responseMessage.addMessage("Message sending failed after " + retries + " retries.");
 		}
 	}
 	
@@ -118,10 +126,4 @@ public class SockJsWebsocketStompSessionHandler extends StompSessionHandlerAdapt
 			System.out.println("Sleep interrupted");
 		}
 	}
-
-    // Notify the wait method in sendMessage when the connection is ready
-    public synchronized void notifyConnection() {
-        isConnected = true;
-        notifyAll();
-    }
 }
