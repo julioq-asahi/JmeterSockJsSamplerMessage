@@ -85,19 +85,39 @@ public class SockJsWebsocketStompSessionHandler extends StompSessionHandlerAdapt
 	    session.subscribe(headers, new SockJsWebsocketSubscriptionHandler(this.responseMessage, this.responseBufferTime));
 	}
 
-    public void sendMessage(StompSession session, String destination, String message) {
-        if (session != null && destination != null && message != null) {
-            synchronized (session) {
-                try {
-                    StompHeaders stompHeaders = new StompHeaders();
-                    stompHeaders.setDestination(destination);
-                    session.send(stompHeaders, message.getBytes());
-                } catch (Exception e) {
-                    responseMessage.addProblem("Error on sending message: " + e.getMessage());
-                }
-            }
-        }
-    }
+	public void sendMessage(StompSession session, String destination, String message) {
+		StompHeaders stompHeaders = new StompHeaders();
+		stompHeaders.setDestination(destination);
+	
+		boolean messageSent = false;
+		int maxRetries = 10;
+		int retries = 0;
+		int sleepTime = 20;
+	
+		while (!messageSent && retries < maxRetries) {
+			try {
+				session.send(stompHeaders, message.getBytes());
+				messageSent = true; // If send successful, exit loop
+			} catch (Exception e) {
+				retries++;
+				if (retries < maxRetries) {
+					msleep(sleepTime);
+				} else {
+					// Log the failure after retrying max times
+					System.out.println("Failed to send message after " + retries + " retries.");
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+	
+	private void msleep(int ms) {
+		try {
+			Thread.sleep(ms);
+		} catch (InterruptedException e) {
+			System.out.println("Sleep interrupted");
+		}
+	}
 
     // Notify the wait method in sendMessage when the connection is ready
     public synchronized void notifyConnection() {

@@ -179,40 +179,7 @@ public class SockJsSampler extends AbstractJavaSamplerClient implements Serializ
 
 		// Establish connection
 		StompSession session = stompClient.connect(stompUrlEndpoint.toString(), handshakeHeaders, connectHeaders, sessionHandler).get();
-
-		// Retry sending message if any parameter is null
-		long timeout = context.getLongParameter(CONNECTION_TIME);
-		long startTime = System.currentTimeMillis();
-		boolean messageSent = false;
-
-		while ((System.currentTimeMillis() - startTime) < timeout && !messageSent) {
-			if (session != null && messageDestination != null && messageBody != null) {
-				try {
-					sessionHandler.sendMessage(session, messageDestination, messageBody);
-					messageSent = true;
-					responseMessage.addMessage("Message sent successfully: " + messageBody);
-				} catch (Exception e) {
-					responseMessage.addProblem("Error sending message: " + e.getMessage());
-				}
-			} else {
-				responseMessage.addProblem("Retrying to send message due to null parameter(s)...");
-			}
-
-			// Short delay to prevent busy waiting
-			if (!messageSent) {
-				try {
-					Thread.sleep(100); // 100ms delay between retries
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					responseMessage.addProblem("Interrupted during retry sleep: " + e.getMessage());
-				}
-			}
-		}
-
-		if (!messageSent) {
-			responseMessage.addProblem("Failed to send message after retries within time limit.");
-		}
-
+		sessionHandler.sendMessage(session, messageDestination, messageBody);
 
 		// Allow some time before stopping the client
 		Thread.sleep(context.getLongParameter(CONNECTION_TIME) + context.getLongParameter(RESPONSE_BUFFER_TIME));
@@ -252,7 +219,6 @@ public class SockJsSampler extends AbstractJavaSamplerClient implements Serializ
 						 + "\n - Using disconnect pattern \"\"";
 
  	  responseMessage.addMessage(startMessage);
- 	  
  	  
  	  transport.connect(request, xhrSessionHandler);
  	 
